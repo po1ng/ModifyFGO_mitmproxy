@@ -5,8 +5,8 @@ import base64
 import urllib
 
 def readSetting(url) :
-  uid = re.search(r'\d{12}',url,re.I)
-  return json.loads(readFile(profile+uid+'setting.json'))
+  uid = re.search(r'\d{12}',url,re.I).group()
+  return json.loads(readFile(profile+str(uid)+'setting.json'))
 
 def readFile(path) :
   file_object = open(path)
@@ -38,9 +38,9 @@ def replaceSvt(sv, id) :
 def isUndefined(var) :
   return isinstance(var, int) or var.isalpha()
 
-mitmSetting = readFile('./setting.txt')
-profile = re.search(r'profile=.*',mitmSetting,re.I)
-serverAddress = re.search(r'serverAddress=.*',mitmSetting,re.I)
+mitmSetting = readFile('C:/Program Files (x86)/mitmproxy/bin/ModifyFGO_mitmproxy/setting.txt')
+profile = str(re.search(r'(?<=profile=).*',mitmSetting,re.I).group())
+serverAddress = str(re.search(r'(?<=serverAddress=).*',mitmSetting,re.I).group())
 
 def http_connect(flow):
   if flow.request.host.find('bilibiligame.net') ==- 1:
@@ -52,20 +52,26 @@ def request(flow: http.HTTPFlow) -> None :
   if flow.request.url.find(serverAddress) > -1 :
     uid = re.search(r'\d{12}',flow.request.url,re.I)
     request_str = str(flow.request.content, encoding='utf-8')
-    wirteFile(profile+uid+'setting.json', request_str)
+    wirteFile(profile+str(uid)+'setting.json', request_str)
   if flow.request.url.find("ac.php") > -1 :
     query_key = flow.request.urlencoded_form['key']
     if query_key == "battleresult" :
       request_str = str(flow.request.content, encoding='utf-8')
-      request_str = request_str.split('&')[11]
-      request_json = json.loads(request_str[7:])
+      request_arr = request_str.split('&')
+      request_result_str = request_arr[11]
+      print(request_result_str[7:])
+      request_json = json.loads(urllib.parse.unquote(request_result_str[7:]))
       if request_json["battleResult"] == 3 :
         setting = readSetting(flow.request.url)
         if setting["battleCancel"] :
           request_json["battleResult"] = 1
           request_json["elapsedTurn"] = 11
           request_json["aliveUniqueIds"] = []
-          requset_bytes = bytes(json.dumps(request_json), encoding='utf-8')
+          requset_result_str = "result="+urllib.parse.quote(json.dumps(request_json))
+          request_arr[11] = requset_result_str
+          for arr in request_arr :
+            request_str +=arr+"&"
+          requset_bytes = bytes(request_str, encoding='utf-8')
           flow.request.content = requset_bytes
 
 def response(flow: http.HTTPFlow) -> None :
@@ -73,10 +79,11 @@ def response(flow: http.HTTPFlow) -> None :
     query_key = flow.request.urlencoded_form['key']
     if query_key == "battlesetup" or query_key == "battleresume" :
       #decode
-      body_bytes = flow.response.content
+      body_bytes = str(flow.response.content, encoding='utf-8')
       body_str = urllib.parse.unquote(body_bytes)
-      base64_decrypt = base64.b64decode(body_str)
+      base64_decrypt = str(base64.b64decode(body_str), encoding='utf-8')
       json_data = json.loads(base64_decrypt)
+
       #print(json_data["sign"])
       #modify
       options = readSetting(flow.request.url)
@@ -88,7 +95,7 @@ def response(flow: http.HTTPFlow) -> None :
       skillLv = options["skillLv"]
       tdLv = options["tdLv"]
       enemyActNumSwitch = options["enemyActNumSwitch"]
-      enemyActNumTo = options["enemyActNumTo"]
+      enemyActNumTo = options["enemyActNum"]
       enemyChargeTurnSwitch = options["enemyChargeTurnSwitch"]
       enemyChargeTurnto = options["enemyChargeTurnto"]
       replaceSvtSwitch = options["replaceSvtSwitch"]
@@ -102,7 +109,7 @@ def response(flow: http.HTTPFlow) -> None :
       replaceCraftSwitch = options["replaceCraftSwitch"]
       replaceCraftSpinner = options["replaceCraftSpinner"]
 
-      if json_data['response']['resCode'] == 00 :
+      if json_data['response'][0]['resCode'] == 00 :
           svts = json_data['cache']['replaced']['battle'][0]['battleInfo']['userSvt']
           for sv in svts :
             # ----------------------------------------

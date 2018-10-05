@@ -1,2 +1,2 @@
-profile=./profile
+profile=C:/Program Files (x86)/mitmproxy/bin/ModifyFGO_mitmproxy/profile/
 serverAddress=com.locbytes.xfgo.signal
