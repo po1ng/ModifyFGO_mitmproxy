@@ -4,6 +4,40 @@ import json
 import base64
 import urllib
 
+def readSetting(url) :
+  uid = re.search(r'\d{12}',url,re.I)
+  return json.loads(readFile(profile+uid+'setting.json'))
+
+def readFile(path) :
+  file_object = open(path)
+  try:
+    file_context = file_object.read()
+    return file_context
+  finally:
+    file_object.close()
+
+def wirteFile(path, content) :
+  with open(path, 'w') as f:
+    f.write(content)
+
+def replaceSvt(sv, id) :
+	svt = json.loads(readFile('./svtData.json'))
+	sv["svtId"] = svt["svt"][id]["id"]
+	sv["treasureDeviceId"] = svt["svt"][id]["tdid"]
+	sv["skillId1"] = svt["svt"][id]["sk1"]
+	sv["skillId2"] = svt["svt"][id]["sk2"]
+	sv["skillId3"] = svt["svt"][id]["sk3"]
+	sv["hp"] = svt["svt"][id]["hp"]
+	sv["atk"] = svt["svt"][id]["atk"]
+	if svt["svt"][id]["limit"] :
+		sv["limitCount"] = 0
+		sv["dispLimitCount"] = 0
+		sv["commandCardLimitCount"] = 0
+		sv["iconLimitCount"] = 0
+
+def isUndefined(var) :
+  return isinstance(var, int) or var.isalpha()
+
 mitmSetting = readFile('./setting.txt')
 profile = re.search(r'profile=.*',mitmSetting,re.I)
 serverAddress = re.search(r'serverAddress=.*',mitmSetting,re.I)
@@ -14,10 +48,11 @@ def http_connect(flow):
       404,''
     )
 
-def request(flow):
+def request(flow: http.HTTPFlow) -> None :
   if flow.request.url.find(serverAddress) > -1 :
+    uid = re.search(r'\d{12}',flow.request.url,re.I)
     request_str = str(flow.request.content, encoding='utf-8')
-    wirteFile(profile+uid+'setting.json')
+    wirteFile(profile+uid+'setting.json', request_str)
   if flow.request.url.find("ac.php") > -1 :
     query_key = flow.request.urlencoded_form['key']
     if query_key == "battleresult" :
@@ -38,15 +73,15 @@ def response(flow: http.HTTPFlow) -> None :
     query_key = flow.request.urlencoded_form['key']
     if query_key == "battlesetup" or query_key == "battleresume" :
       #decode
-      body_bytes = str(flow.response.content, encoding='utf-8')
+      body_bytes = flow.response.content
       body_str = urllib.parse.unquote(body_bytes)
-      base64_decrypt = str(base64.b64decode(body_str), encoding='utf-8')
+      base64_decrypt = base64.b64decode(body_str)
       json_data = json.loads(base64_decrypt)
       #print(json_data["sign"])
       #modify
-      setting = readSetting(flow.request.url)
+      options = readSetting(flow.request.url)
       json_data["sign"]=""
-      options = readSetting(requestDetail.url)
+      options = readSetting(flow.request.url)
       uHp = options["uHp"]
       uAtk = options["uAtk"]
       limitCountSwitch = options["limitCountSwitch"]
@@ -67,13 +102,12 @@ def response(flow: http.HTTPFlow) -> None :
       replaceCraftSwitch = options["replaceCraftSwitch"]
       replaceCraftSpinner = options["replaceCraftSpinner"]
 
-      if (json_data['cache']['replaced']['battle'] != undefined) {
+      if json_data['response']['resCode'] == 00 :
           svts = json_data['cache']['replaced']['battle'][0]['battleInfo']['userSvt']
-          for (i = 0;i<svts.length;i+1) {
-            sv = svts[i]
+          for sv in svts :
             # ----------------------------------------
             # enemy
-            if sv['hpGaugeType'] != undefined :
+            if isUndefined(sv['hpGaugeType']) :
               # replace enemy act num
               if enemyActNumSwitch :
                 sv['maxActNum'] = enemyActNumTo
@@ -81,17 +115,19 @@ def response(flow: http.HTTPFlow) -> None :
               if enemyChargeTurnSwitch :
                 sv['chargeTurn'] = enemyChargeTurnto
               continue
-            }
             # ----------------------------------------
 
             # ----------------------------------------
             # svt
-            if sv['status'] != undefined and sv['userId'] != undefined and sv['userId'] != '0' and sv['userId'] != 0 :
-              for str in ['hp','atk'] :
-                if isinstance(sv['atk'], int) :
-                  sv['atk'] = int(sv['atk'])*uAtk
-                else :
-                  sv['atk'] = str(int(sv['atk'])*uAtk)
+            if isUndefined(sv['status']) and isUndefined(sv['userId']) and sv['userId'] != '0' and sv['userId'] != 0 :
+              if isinstance(sv['hp'], int) :
+                sv['hp'] = int(sv['hp'])*uHp
+              else :
+                sv['hp'] = str(int(sv['hp'])*uHp)
+              if isinstance(sv['atk'], int) :
+                sv['atk'] = int(sv['atk'])*uAtk
+              else :
+                sv['atk'] = str(int(sv['atk'])*uAtk)
 
               # replace skill level
               if (skillLv) :
@@ -123,18 +159,14 @@ def response(flow: http.HTTPFlow) -> None :
                   replaceSvt(sv, 5)
                   sv["treasureDeviceLv"] = 1
                 continue
-              }
-            }
             # ----------------------------------------
 
             # ----------------------------------------
             # carft            
-            if replaceCraftSwitch and sv["parentSvtId"] != undefined :
+            if replaceCraftSwitch and isUndefined(sv["parentSvtId"]) :
               carftMap = [990068,990645,990066,990062,990131,990095,990113,990064,990333,990629,990327,990306]
               sv["skillId1"] = carftMap[replaceCraftSpinner-1]
             # ----------------------------------------
-          }
-        }
       #encode
       body_str = bytes(json.dumps(json_data), encoding='utf-8')
       base64_encrypt = str(base64.b64encode(body_str), encoding='utf-8')
@@ -142,34 +174,3 @@ def response(flow: http.HTTPFlow) -> None :
       body_bytes = bytes(body_str, encoding='utf-8')
       #print(body_bytes)
       flow.response.content = body_bytes
-
-def readSetting(url) :
-  uid = re.search(r'\d{12}',url,re.I)
-  return json.loads(readFile(profile+uid+'setting.json'))
-
-def readFile(path) :
-  file_object = open(path)
-  try:
-    file_context = file_object.read()
-    return file_context
-  finally:
-    file_object.close()
-
-def wirteFile(path, content) :
-  with open(path, 'w') as f:
-    f.write(content)
-
-def replaceSvt(sv, id) :
-	var svt = json.loads(readFile('./svtData.json'))
-	sv["svtId"] = svt["svt"][id]["id"]
-	sv["treasureDeviceId"] = svt["svt"][id]["tdid"]
-	sv["skillId1"] = svt["svt"][id]["sk1"]
-	sv["skillId2"] = svt["svt"][id]["sk2"]
-	sv["skillId3"] = svt["svt"][id]["sk3"]
-	sv["hp"] = svt["svt"][id]["hp"]
-	sv["atk"] = svt["svt"][id]["atk"]
-	if svt["svt"][id]["limit"] :
-		sv["limitCount"] = 0
-		sv["dispLimitCount"] = 0
-		sv["commandCardLimitCount"] = 0
-		sv["iconLimitCount"] = 0
